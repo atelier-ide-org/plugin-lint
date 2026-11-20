@@ -1,0 +1,22 @@
+{
+  "lint.active_file": "Active file",
+  "lint.cannot_save": "The settings of Lint could not be saved: {e}",
+  "lint.failed": "Failed: {reason}",
+  "lint.formatters": "Formatters (Reformat Code)",
+  "lint.found": "{count} problems in {ms} ms",
+  "lint.known": "Tools the plugin knows",
+  "lint.linters": "Linters",
+  "lint.live": "as you type",
+  "lint.missing": "{program} is not installed",
+  "lint.missing_config": "Configured in {config}, but {program} is not installed",
+  "lint.no_file": "Open a file to see the linters and formatters that check it.",
+  "lint.no_tools": "No linter or formatter the plugin knows reads this file.",
+  "lint.off": "Not used by this project",
+  "lint.on_save": "once saved",
+  "lint.open": "Lint: show the linters and formatters",
+  "lint.ready": "Runs",
+  "lint.ready_config": "Runs · {config}",
+  "lint.ready_installed": "Runs · installed in the project",
+  "lint.title": "Lint",
+  "lint.turned_off": "Turned off"
+}

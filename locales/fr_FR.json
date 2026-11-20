@@ -1,0 +1,22 @@
+{
+  "lint.active_file": "Fichier actif",
+  "lint.cannot_save": "Les réglages de Lint n'ont pas pu être enregistrés : {e}",
+  "lint.failed": "Échec : {reason}",
+  "lint.formatters": "Formateurs (Reformater le code)",
+  "lint.found": "{count} problèmes en {ms} ms",
+  "lint.known": "Outils connus du plugin",
+  "lint.linters": "Linters",
+  "lint.live": "à la frappe",
+  "lint.missing": "{program} n'est pas installé",
+  "lint.missing_config": "Configuré dans {config}, mais {program} n'est pas installé",
+  "lint.no_file": "Ouvrez un fichier pour voir les linters et formateurs qui le vérifient.",
+  "lint.no_tools": "Aucun linter ni formateur connu du plugin ne lit ce fichier.",
+  "lint.off": "Pas utilisé par ce projet",
+  "lint.on_save": "à l'enregistrement",
+  "lint.open": "Lint : afficher les linters et formateurs",
+  "lint.ready": "Actif",
+  "lint.ready_config": "Actif · {config}",
+  "lint.ready_installed": "Actif · installé dans le projet",
+  "lint.title": "Lint",
+  "lint.turned_off": "Désactivé"
+}

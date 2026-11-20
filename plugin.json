@@ -1,0 +1,9 @@
+{
+  "id": "lint",
+  "name": "Lint",
+  "version": "0.1.0",
+  "description": "ESLint, Oxlint, Biome, Stylelint, Ruff, ShellCheck and other linters as you type, Prettier and Oxfmt to format.",
+  "library": "lint",
+  "abi": 2,
+  "extensions": []
+}
