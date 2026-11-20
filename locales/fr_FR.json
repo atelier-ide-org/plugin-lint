@@ -1,7 +1,9 @@
 {
   "lint.active_file": "Fichier actif",
   "lint.cannot_save": "Les réglages de Lint n'ont pas pu être enregistrés : {e}",
+  "lint.disable_line": "{tool} : désactiver {rule} pour cette ligne",
   "lint.failed": "Échec : {reason}",
+  "lint.fix_rule": "{tool} : corriger {rule}",
   "lint.formatters": "Formateurs (Reformater le code)",
   "lint.found": "{count} problèmes en {ms} ms",
   "lint.known": "Outils connus du plugin",

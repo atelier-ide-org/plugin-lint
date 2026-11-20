@@ -44,7 +44,7 @@ dependencies = [
 [[package]]
 name = "atelier-plugin-api"
 version = "0.5.0"
-source = "git+https://github.com/atelier-ide-org/api?branch=lint#b9969cedf957201ab0520c070a5f2911bd854daf"
+source = "git+https://github.com/atelier-ide-org/api?branch=lint#131a82e55083f0e11e035a33c721c3fa15e130ed"
 dependencies = [
  "egui",
  "serde",

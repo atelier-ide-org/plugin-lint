@@ -306,3 +306,115 @@ fn a_report_that_is_no_json_is_a_failure_of_the_tool() {
     let e = eslint(&crashed, &Text::new(""), &file("a.js"), "eslint").unwrap_err();
     assert!(e.starts_with("Oops! Something went wrong!"), "{e}");
 }
+
+/// Each fix as `title: line:column-end_line:end_column "text" …`, with `*` when it is the
+/// tool's own.
+fn fixes(found: &Diagnostic) -> Vec<String> {
+    found
+        .fixes
+        .iter()
+        .map(|f| {
+            let edits: Vec<String> = f
+                .edits
+                .iter()
+                .map(|e| {
+                    format!(
+                        "{}:{}-{}:{} {:?}",
+                        e.line, e.column, e.end_line, e.end_column, e.text
+                    )
+                })
+                .collect();
+            let star = if f.preferred { "*" } else { "" };
+            format!("{star}{}: {}", f.title, edits.join(" "))
+        })
+        .collect()
+}
+
+#[test]
+fn eslint_fixes_suggestions_and_a_comment_that_turns_the_rule_off() {
+    crate::i18n::set_language("en_US");
+    // ESLint 10: `no-var` and `prefer-const` fix themselves; `no-unused-vars` suggests.
+    let source = "var a = 1;\n  let é = 2;\nconsole.log(a);\n";
+    let report = r#"[{"messages":[
+        {"ruleId":"no-var","severity":2,"message":"Unexpected var, use let or const instead.","line":1,"column":1,"endLine":1,"endColumn":11,"fix":{"range":[0,10],"text":"let a = 1;"}},
+        {"ruleId":"no-unused-vars","severity":2,"message":"'é' is assigned a value but never used.","line":2,"column":7,"endLine":2,"endColumn":8,"suggestions":[{"messageId":"removeVar","fix":{"range":[13,23],"text":""},"desc":"Remove unused variable 'é'."}]}
+    ]}]"#;
+    let found = eslint(&out(report), &Text::new(source), &file("a.ts"), "eslint").unwrap();
+    assert_eq!(
+        fixes(&found[0]),
+        [
+            "*eslint: fix no-var: 0:0-0:10 \"let a = 1;\"",
+            "eslint: turn no-var off for this line: 0:0-0:0 \"// eslint-disable-next-line no-var\\n\"",
+        ]
+    );
+    assert_eq!(
+        fixes(&found[1]),
+        [
+            "eslint: Remove unused variable 'é'.: 1:2-1:12 \"\"",
+            "eslint: turn no-unused-vars off for this line: 1:0-1:0 \"  // eslint-disable-next-line no-unused-vars\\n\"",
+        ]
+    );
+    // No line comment above the template of a Vue file.
+    let found = eslint(&out(report), &Text::new(source), &file("a.vue"), "eslint").unwrap();
+    assert_eq!(found[0].fixes.len(), 1);
+}
+
+#[test]
+fn ruff_fixes_and_noqa() {
+    crate::i18n::set_language("en_US");
+    let source = "import os\nx = 1  # noqa: E501\n";
+    let report = r#"[{"code":"F401","location":{"column":8,"row":1},"end_location":{"column":10,"row":1},"message":"`os` imported but unused",
+        "fix":{"applicability":"safe","message":"Remove unused import: `os`","edits":[{"content":"","location":{"column":1,"row":1},"end_location":{"column":1,"row":2}}]}},
+        {"code":"E501","location":{"column":1,"row":2},"end_location":{"column":2,"row":2},"message":"Line too long","fix":null}]"#;
+    let found = ruff(&out(report), &Text::new(source), &file("a.py"), "ruff").unwrap();
+    assert_eq!(
+        fixes(&found[0]),
+        [
+            "*ruff: Remove unused import: `os`: 0:0-1:0 \"\"",
+            "ruff: turn F401 off for this line: 0:9-0:9 \"  # noqa: F401\"",
+        ]
+    );
+    // The line has its `# noqa` already.
+    assert!(found[1].fixes.is_empty());
+}
+
+#[test]
+fn markdownlint_and_shellcheck_fixes() {
+    crate::i18n::set_language("en_US");
+    let source = "#Title\n* a\n";
+    let report = r#"[
+      {"lineNumber":1,"ruleNames":["MD018"],"ruleDescription":"No space after hash","errorRange":[1,2],"fixInfo":{"editColumn":2,"insertText":" "}},
+      {"lineNumber":2,"ruleNames":["MD032"],"ruleDescription":"Lists should be surrounded by blank lines","errorRange":null,"fixInfo":{"insertText":"\n"}},
+      {"lineNumber":2,"ruleNames":["MD012"],"ruleDescription":"Multiple blank lines","errorRange":null,"fixInfo":{"deleteCount":-1}}
+    ]"#;
+    let found = markdownlint(
+        &err(report),
+        &Text::new(source),
+        &file("a.md"),
+        "markdownlint",
+    )
+    .unwrap();
+    assert_eq!(
+        fixes(&found[0]),
+        ["*markdownlint: fix MD018: 0:1-0:1 \" \""]
+    );
+    assert_eq!(
+        fixes(&found[1]),
+        ["*markdownlint: fix MD032: 1:0-1:0 \"\\n\""]
+    );
+    assert_eq!(fixes(&found[2]), ["*markdownlint: fix MD012: 1:0-2:0 \"\""]);
+    let report = r#"{"comments":[{"line":1,"endLine":1,"column":6,"endColumn":8,"level":"info","code":2086,"message":"Double quote to prevent globbing.",
+        "fix":{"replacements":[{"line":1,"endLine":1,"column":6,"endColumn":6,"insertionPoint":"afterEnd","precedence":7,"replacement":"\""},
+                               {"line":1,"endLine":1,"column":8,"endColumn":8,"insertionPoint":"beforeStart","precedence":7,"replacement":"\""}]}}]}"#;
+    let found = shellcheck(
+        &out(report),
+        &Text::new("echo $1\n"),
+        &file("a.sh"),
+        "shellcheck",
+    )
+    .unwrap();
+    assert_eq!(
+        fixes(&found[0]),
+        ["*shellcheck: fix SC2086: 0:5-0:5 \"\\\"\" 0:7-0:7 \"\\\"\""]
+    );
+}

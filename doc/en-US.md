@@ -9,6 +9,16 @@ tags: [lint, linter, eslint, oxlint, biome, stylelint, markdownlint, ruff, pylin
 
 The **Lint** plugin runs the linters of your project on the files you edit, and shows their problems in the editor (underlined, in the gutter and in **Problems**) next to the ones of the IDE. **Reformat Code** (Ctrl+Alt+L) formats with Prettier or Oxfmt when the project uses them.
 
+## Fixes
+
+On a line with a problem, a bulb shows in the gutter: a click on it, or **Alt+Enter**, lists the fixes of the problems there:
+
+- the fix of the tool itself (ESLint, Ruff, markdownlint, ShellCheck) and its suggestions (ESLint);
+- turning the rule off for the line: `// eslint-disable-next-line rule` above it, `# noqa: CODE` at its end (Ruff);
+- **Fix all ESLint problems in the file** (and the same for the other tools), when the tool has more than one fix of its own.
+
+Fixes are offered while the text is the one the tool checked: after a change, they come back with the next check, a moment later.
+
 ## When a tool runs
 
 A tool runs for a file only where the project asks for it, so that rules nobody chose stay silent:

@@ -4,7 +4,7 @@
 
 use crate::{
     run::Output,
-    text::{Text, Unit, problem, problem_at_bytes},
+    text::{Text, Unit, edit, fix, problem, problem_at_bytes},
 };
 use atelier_plugin_api::protocol::{Diagnostic, Severity};
 use serde_json::Value;
@@ -104,17 +104,41 @@ fn located_lines<'a>(
     })
 }
 
-/// ESLint, `--format json`: columns in UTF-16 units, as JavaScript counts.
+/// The fix of ESLint `{range: [start, end], text}`, its range in UTF-16 units.
+fn eslint_edit(text: &Text, fix: &Value) -> Option<atelier_plugin_api::protocol::Edit> {
+    let range = fix.get("range")?.as_array()?;
+    let start = range.first()?.as_u64()? as usize;
+    let end = range.get(1)?.as_u64()? as usize;
+    Some(edit(
+        text.position_utf16(start),
+        text.position_utf16(end),
+        string(fix, "text").unwrap_or_default(),
+    ))
+}
+
+/// Whether a line comment of JavaScript may go above a line of the file (not in a Vue or
+/// Svelte template).
+fn js_comments(file: &Path) -> bool {
+    let extension = file
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    ["js", "jsx", "mjs", "cjs", "ts", "tsx", "mts", "cts"].contains(&extension.as_str())
+}
+
+/// ESLint, `--format json`: columns in UTF-16 units, as JavaScript counts. Its fix, its
+/// suggestions, and a comment that turns the rule off for the line.
 pub fn eslint(
     out: &Output,
     text: &Text,
-    _: &Path,
+    file: &Path,
     source: &str,
 ) -> Result<Vec<Diagnostic>, String> {
     let report = json(out.report())?;
     let mut found = Vec::new();
-    for file in report.as_array().into_iter().flatten() {
-        for m in array(file, "messages") {
+    for entry in report.as_array().into_iter().flatten() {
+        for m in array(entry, "messages") {
             let message = string(m, "message").unwrap_or_default();
             // A file its configuration leaves out is not a problem of the file.
             if m.get("ruleId").is_some_and(Value::is_null)
@@ -124,7 +148,8 @@ pub fn eslint(
                 continue;
             }
             let end = int(m, "endLine").zip(int(m, "endColumn"));
-            found.push(problem(
+            let rule = string(m, "ruleId");
+            let mut found_here = problem(
                 text,
                 int(m, "line").unwrap_or(1),
                 int(m, "column").unwrap_or(1),
@@ -137,8 +162,38 @@ pub fn eslint(
                 },
                 message,
                 source,
-                string(m, "ruleId"),
-            ));
+                rule.clone(),
+            );
+            let name = rule.clone().unwrap_or_default();
+            if let Some(e) = m.get("fix").and_then(|f| eslint_edit(text, f)) {
+                found_here.fixes.push(fix(
+                    trf!("lint.fix_rule", tool = source, rule = name),
+                    vec![e],
+                    true,
+                ));
+            }
+            for suggestion in array(m, "suggestions") {
+                if let Some(e) = suggestion.get("fix").and_then(|f| eslint_edit(text, f)) {
+                    let title = string(suggestion, "desc").unwrap_or_else(|| name.clone());
+                    found_here
+                        .fixes
+                        .push(fix(format!("{source}: {title}"), vec![e], false));
+                }
+            }
+            if let Some(rule) = rule.filter(|_| js_comments(file)) {
+                let line = found_here.line;
+                let indent = &text.line(line as usize)[..text.line_start(line as usize) as usize];
+                found_here.fixes.push(fix(
+                    trf!("lint.disable_line", tool = source, rule = rule),
+                    vec![edit(
+                        (line, 0),
+                        (line, 0),
+                        format!("{indent}// eslint-disable-next-line {rule}\n"),
+                    )],
+                    false,
+                ));
+            }
+            found.push(found_here);
         }
     }
     Ok(found)
@@ -293,7 +348,7 @@ pub fn markdownlint(
                 .and_then(|n| n.first())
                 .and_then(Value::as_str)
                 .map(str::to_string);
-            problem(
+            let mut found = problem(
                 text,
                 line,
                 column,
@@ -302,8 +357,32 @@ pub fn markdownlint(
                 Severity::Warning,
                 message,
                 source,
-                code,
-            )
+                code.clone(),
+            );
+            if let Some(info) = e.get("fixInfo").filter(|f| f.is_object()) {
+                let at_line = int(info, "lineNumber").unwrap_or(line);
+                let column = int(info, "editColumn").unwrap_or(1);
+                let deleted = info.get("deleteCount").and_then(Value::as_i64).unwrap_or(0);
+                let inserted = string(info, "insertText").unwrap_or_default();
+                let change = if deleted < 0 {
+                    // The whole line goes.
+                    let line0 = at_line.saturating_sub(1) as u32;
+                    edit((line0, 0), (line0 + 1, 0), inserted)
+                } else {
+                    edit(
+                        text.at(at_line, column, Unit::Chars),
+                        text.at(at_line, column + deleted as usize, Unit::Chars),
+                        inserted,
+                    )
+                };
+                let rule = code.unwrap_or_default();
+                found.fixes.push(fix(
+                    trf!("lint.fix_rule", tool = source, rule = rule),
+                    vec![change],
+                    true,
+                ));
+            }
+            found
         })
         .collect())
 }
@@ -328,7 +407,7 @@ pub fn ruff(out: &Output, text: &Text, _: &Path, source: &str) -> Result<Vec<Dia
             } else {
                 Severity::Warning
             };
-            problem(
+            let mut found = problem(
                 text,
                 line,
                 column,
@@ -337,8 +416,50 @@ pub fn ruff(out: &Output, text: &Text, _: &Path, source: &str) -> Result<Vec<Dia
                 severity,
                 string(d, "message").unwrap_or_default(),
                 source,
-                code,
-            )
+                code.clone(),
+            );
+            if let Some(f) = d.get("fix").filter(|f| f.is_object()) {
+                let applicability = string(f, "applicability").unwrap_or_default();
+                let edits: Vec<_> = array(f, "edits")
+                    .filter_map(|e| {
+                        let place = |key: &str| {
+                            let p = e.get(key)?;
+                            Some(text.at(int(p, "row")?, int(p, "column")?, Unit::Chars))
+                        };
+                        Some(edit(
+                            place("location")?,
+                            place("end_location")?,
+                            string(e, "content").unwrap_or_default(),
+                        ))
+                    })
+                    .collect();
+                if applicability != "display-only" && !edits.is_empty() {
+                    let title =
+                        string(f, "message").unwrap_or_else(|| code.clone().unwrap_or_default());
+                    found.fixes.push(fix(
+                        format!("{source}: {title}"),
+                        edits,
+                        applicability == "safe",
+                    ));
+                }
+            }
+            // `# noqa: CODE` at the end of the line, unless it has one.
+            if let Some(code) = &code {
+                let line0 = found.line as usize;
+                if !text.line(line0).contains("# noqa") {
+                    let end = text.line_end(line0);
+                    found.fixes.push(fix(
+                        trf!("lint.disable_line", tool = source, rule = code),
+                        vec![edit(
+                            (line0 as u32, end),
+                            (line0 as u32, end),
+                            format!("  # noqa: {code}"),
+                        )],
+                        false,
+                    ));
+                }
+            }
+            found
         })
         .collect())
 }
@@ -503,7 +624,7 @@ pub fn shellcheck(
         .map(|c| {
             let end = int(c, "endLine").zip(int(c, "endColumn"));
             let code = int(c, "code").map(|n| format!("SC{n}"));
-            problem(
+            let mut found = problem(
                 text,
                 int(c, "line").unwrap_or(1),
                 int(c, "column").unwrap_or(1),
@@ -512,8 +633,30 @@ pub fn shellcheck(
                 level(&string(c, "level").unwrap_or_default()),
                 string(c, "message").unwrap_or_default(),
                 source,
-                code,
-            )
+                code.clone(),
+            );
+            let edits: Vec<_> = c
+                .pointer("/fix/replacements")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(|r| {
+                    Some(edit(
+                        text.at(int(r, "line")?, int(r, "column")?, Unit::Chars),
+                        text.at(int(r, "endLine")?, int(r, "endColumn")?, Unit::Chars),
+                        string(r, "replacement").unwrap_or_default(),
+                    ))
+                })
+                .collect();
+            if !edits.is_empty() {
+                let rule = code.unwrap_or_default();
+                found.fixes.push(fix(
+                    trf!("lint.fix_rule", tool = source, rule = rule),
+                    edits,
+                    true,
+                ));
+            }
+            found
         })
         .collect())
 }

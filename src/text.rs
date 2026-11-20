@@ -1,7 +1,7 @@
 //! Places in a text as the tools give them (bytes, characters or UTF-16 units, from 0 or 1) and
 //! as the IDE reads them: 0-based lines and UTF-16 columns.
 
-use atelier_plugin_api::protocol::{Diagnostic, Severity};
+use atelier_plugin_api::protocol::{Diagnostic, Edit, Fix, Severity};
 
 /// How a tool counts the columns of a line.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -58,6 +58,28 @@ impl<'a> Text<'a> {
         (line as u32, column)
     }
 
+    /// The 0-based line and the UTF-16 column of the 1-based `line` and `column` in `unit`.
+    pub fn at(&self, line: usize, column: usize, unit: Unit) -> (u32, u32) {
+        let line = line.saturating_sub(1);
+        (
+            line as u32,
+            self.column(line, column.saturating_sub(1), unit),
+        )
+    }
+
+    /// The 0-based line and the UTF-16 column of the UTF-16 `offset` of the whole text, as
+    /// JavaScript counts (ESLint's ranges).
+    pub fn position_utf16(&self, offset: usize) -> (u32, u32) {
+        let mut units = 0;
+        for (byte, c) in self.text.char_indices() {
+            if units >= offset {
+                return self.position(byte);
+            }
+            units += c.len_utf16();
+        }
+        self.position(self.text.len())
+    }
+
     /// The UTF-16 column of the end of the line `line`.
     pub fn line_end(&self, line: usize) -> u32 {
         self.line(line).encode_utf16().count() as u32
@@ -108,6 +130,7 @@ pub fn problem(
         message: message.into(),
         source: source.to_string(),
         code: code.filter(|c| !c.is_empty()),
+        fixes: Vec::new(),
     }
 }
 
@@ -134,6 +157,7 @@ pub fn problem_at_bytes(
         message: message.into(),
         source: source.to_string(),
         code: code.filter(|c| !c.is_empty()),
+        fixes: Vec::new(),
     }
 }
 
@@ -160,6 +184,26 @@ fn word_end(text: &Text, line: usize, column: u32) -> u32 {
             .take_while(|c| word(c))
             .map(|c| c.len_utf16() as u32)
             .sum::<u32>()
+}
+
+/// A change from `start` to `end` (0-based lines, UTF-16 columns).
+pub fn edit(start: (u32, u32), end: (u32, u32), text: impl Into<String>) -> Edit {
+    let end = end.max(start);
+    Edit {
+        line: start.0,
+        column: start.1,
+        end_line: end.0,
+        end_column: end.1,
+        text: text.into(),
+    }
+}
+
+pub fn fix(title: impl Into<String>, edits: Vec<Edit>, preferred: bool) -> Fix {
+    Fix {
+        title: title.into(),
+        edits,
+        preferred,
+    }
 }
 
 /// The text without the colors and styles of a terminal.

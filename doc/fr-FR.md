@@ -9,6 +9,16 @@ tags: [lint, linter, eslint, oxlint, biome, stylelint, markdownlint, ruff, pylin
 
 Le plugin **Lint** fait tourner les linters de votre projet sur les fichiers que vous modifiez, et montre leurs problèmes dans l'éditeur (soulignés, dans la gouttière et dans **Problèmes**) avec ceux de l'IDE. **Reformater le code** (Ctrl+Alt+L) formate avec Prettier ou Oxfmt quand le projet les utilise.
 
+## Corrections
+
+Sur une ligne qui a un problème, une ampoule apparaît dans la gouttière : un clic dessus, ou **Alt+Entrée**, liste les corrections des problèmes de la ligne :
+
+- la correction de l'outil lui-même (ESLint, Ruff, markdownlint, ShellCheck) et ses suggestions (ESLint) ;
+- la désactivation de la règle pour la ligne : `// eslint-disable-next-line règle` au-dessus, `# noqa: CODE` à la fin (Ruff) ;
+- **Corriger tous les problèmes eslint du fichier** (et de même pour les autres outils), quand l'outil a plus d'une correction à lui.
+
+Les corrections sont proposées tant que le texte est celui que l'outil a vérifié : après une modification, elles reviennent avec la vérification suivante, un instant plus tard.
+
 ## Quand un outil tourne
 
 Un outil ne tourne sur un fichier que là où le projet le demande, pour que des règles que personne n'a choisies restent muettes :

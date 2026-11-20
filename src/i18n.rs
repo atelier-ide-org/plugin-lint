@@ -18,18 +18,37 @@ static LOCALES: LazyLock<Locales> = LazyLock::new(|| {
 
 static LANGUAGE: RwLock<String> = RwLock::new(String::new());
 
+#[cfg(test)]
+thread_local! {
+    /// Each test thread has its own: the tests run side by side.
+    static TEST_LANGUAGE: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+}
+
 pub fn set_language(language: &str) {
+    #[cfg(test)]
+    TEST_LANGUAGE.with(|l| *l.borrow_mut() = language.to_string());
     if *LANGUAGE.read().unwrap() != language {
         *LANGUAGE.write().unwrap() = language.to_string();
     }
 }
 
+fn language() -> String {
+    #[cfg(test)]
+    {
+        let own = TEST_LANGUAGE.with(|l| l.borrow().clone());
+        if !own.is_empty() {
+            return own;
+        }
+    }
+    LANGUAGE.read().unwrap().clone()
+}
+
 pub fn text(key: &'static str) -> &'static str {
-    LOCALES.get(&LANGUAGE.read().unwrap(), key)
+    LOCALES.get(&language(), key)
 }
 
 pub fn format(key: &'static str, values: &[(&str, &dyn std::fmt::Display)]) -> String {
-    LOCALES.format(&LANGUAGE.read().unwrap(), key, values)
+    LOCALES.format(&language(), key, values)
 }
 
 macro_rules! tr {
